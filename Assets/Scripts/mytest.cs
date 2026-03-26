@@ -24,7 +24,7 @@ public class mytest : MonoBehaviour
 
     void init(GameObject g)
     {
-        for(var i = 0; i < 1000; i++)
+        for(var i = 0; i < 100; i++)
         {
             var a= Instantiate(g);
             a.transform.position = new Vector3(Random.Range(-10f, 10f), 0, Random.Range(-10f, 10f));
