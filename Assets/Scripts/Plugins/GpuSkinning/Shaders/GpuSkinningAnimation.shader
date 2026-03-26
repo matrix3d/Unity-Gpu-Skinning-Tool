@@ -137,12 +137,9 @@ Shader "GPUSkin/GpuSkinningAnimation"
 							, convertFloat16BytesToHalf(floor(color2.b * 255 + 0.5), floor(color2.a * 255 + 0.5)));
 			}
 
-			Varyings Vertex(Attributes input)
-			{
-				UNITY_SETUP_INSTANCE_ID(input);
-				Varyings output;
-
-				float4 boneIndices = input.boneIndices;
+            void GetSkinnedPosNormal(Attributes input, out float3 positionOS, out float3 normalOS)
+            {
+                float4 boneIndices = input.boneIndices;
 				float4 boneWeights = input.boneWeights;
 				
 				int frameIndex = _FrameIndex;
@@ -201,19 +198,78 @@ Shader "GPUSkin/GpuSkinningAnimation"
 					mul(bone2_matrix, input.positionOS) * boneWeights[2] +
 					mul(bone3_matrix, input.positionOS) * boneWeights[3];
 				
-                float3 normalOS =
+                normalOS =
                     mul((float3x3)bone0_matrix, input.normal) * boneWeights[0] +
                     mul((float3x3)bone1_matrix, input.normal) * boneWeights[1] +
                     mul((float3x3)bone2_matrix, input.normal) * boneWeights[2] +
                     mul((float3x3)bone3_matrix, input.normal) * boneWeights[3];
+                
+                positionOS = pos.xyz;
+            }
 
-				output.positionCS = TransformObjectToHClip(pos.xyz);
+			Varyings Vertex(Attributes input)
+			{
+				UNITY_SETUP_INSTANCE_ID(input);
+				Varyings output;
+                
+                float3 positionOS, normalOS;
+                GetSkinnedPosNormal(input, positionOS, normalOS);
+                
+				output.positionCS = TransformObjectToHClip(positionOS);
                 output.normalWS = TransformObjectToWorldNormal(normalOS);
-                output.positionWS = TransformObjectToWorld(pos.xyz);
+                output.positionWS = TransformObjectToWorld(positionOS);
 				output.uv = input.texcoord;
 
 				return output;
 			}
+            
+            // Shadow Caster Logic
+            float3 _LightDirection;
+            float3 _LightPosition;
+            
+            struct VaryingsShadow
+            {
+                float4 positionCS : SV_POSITION;
+                UNITY_VERTEX_OUTPUT_STEREO
+            };
+            
+            float4 GetShadowPositionHClip(float3 positionWS, float3 normalWS)
+            {
+                float3 lightDirectionWS = _LightDirection;
+                #ifdef _CASTING_PUNCTUAL_LIGHT_SHADOW
+                    lightDirectionWS = normalize(_LightPosition - positionWS);
+                #endif
+
+                float4 positionCS = TransformWorldToHClip(ApplyShadowBias(positionWS, normalWS, lightDirectionWS));
+
+                #if UNITY_REVERSED_Z
+                    positionCS.z = min(positionCS.z, positionCS.w * UNITY_NEAR_CLIP_VALUE);
+                #else
+                    positionCS.z = max(positionCS.z, positionCS.w * UNITY_NEAR_CLIP_VALUE);
+                #endif
+
+                return positionCS;
+            }
+
+            VaryingsShadow VertexShadow(Attributes input)
+            {
+                UNITY_SETUP_INSTANCE_ID(input);
+                VaryingsShadow output;
+                
+                float3 positionOS, normalOS;
+                GetSkinnedPosNormal(input, positionOS, normalOS);
+
+                float3 positionWS = TransformObjectToWorld(positionOS);
+                float3 normalWS = TransformObjectToWorldNormal(normalOS);
+
+                output.positionCS = GetShadowPositionHClip(positionWS, normalWS);
+                return output;
+            }
+            
+            half4 FragmentShadow(VaryingsShadow input) : SV_TARGET
+            {
+                return 0;
+            }
 
 			half4 Fragment(Varyings input) : SV_Target
 			{
@@ -295,6 +351,51 @@ Shader "GPUSkin/GpuSkinningAnimation"
 
 			ENDHLSL
 		}
+        
+        Pass
+        {
+            Name "ShadowCaster"
+            Tags { "LightMode" = "ShadowCaster" }
+
+            ZWrite On
+            ZTest LEqual
+            ColorMask 0
+
+            HLSLPROGRAM
+            #pragma exclude_renderers gles gles3 glcore
+            #pragma target 4.5
+
+            //--------------------------------------
+            // GPU Instancing
+            #pragma multi_compile_instancing
+            #pragma multi_compile _ DOTS_INSTANCING_ON
+
+            // -------------------------------------
+            // Material Keywords
+            #pragma shader_feature_local_fragment _ _ALPHATEST_ON
+            #pragma shader_feature_local_fragment _ _SMOOTHNESS_TEXTURE_ALBEDO_CHANNEL_A
+
+            //--------------------------------------
+            // Universal Pipeline keywords
+
+            // -------------------------------------
+            // Unity defined keywords
+            #pragma multi_compile_fragment _ LOD_FADE_CROSSFADE
+
+            // This is used during shadow map generation to differentiate between directional and punctual light shadows, as they use different formulas to apply Depth Bias
+            #pragma multi_compile_vertex _ _CASTING_PUNCTUAL_LIGHT_SHADOW
+
+            #pragma vertex VertexShadow
+            #pragma fragment FragmentShadow
+
+            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
+            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Shadows.hlsl"
+            
+            // Re-using common logic defined in HLSLINCLUDE block
+            // The VertexShadow and FragmentShadow functions are already defined in HLSLINCLUDE
+
+            ENDHLSL
+        }
 
 	}
 }

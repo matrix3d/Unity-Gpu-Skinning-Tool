@@ -130,14 +130,9 @@ Shader "GPUSkin/GpuVerticesAnimation"
 							, convertFloat16BytesToHalf(floor(color2.r * 255 + 0.5), floor(color2.g * 255 + 0.5))
 							, convertFloat16BytesToHalf(floor(color2.b * 255 + 0.5), floor(color2.a * 255 + 0.5)));
 			}
-
-            //Varyings Vertex(Attributes input, uint vid : SV_VertexID)
-            Varyings Vertex(Attributes input)
-			{
-				UNITY_SETUP_INSTANCE_ID(input);
-
-                Varyings output;
-
+            
+            void GetVertexAnimPos(Attributes input, out float3 positionOS)
+            {
                 //int vertexIndex = vid;
                 float vertexIndex = input.vertIndex[0] + 0.5;	// 采样要做半个像素的偏移
                 float4 vertexUV1 = float4((vertexIndex) * _AnimationTex_TexelSize.x, (_FrameIndex + 0.5) * _AnimationTex_TexelSize.y, 0, 0);
@@ -146,15 +141,74 @@ Shader "GPUSkin/GpuVerticesAnimation"
                 float4 blend_vertexUV1 = float4(vertexIndex * _AnimationTex_TexelSize.x, (_BlendFrameIndex + 0.5) * _AnimationTex_TexelSize.y, 0, 0);
                 float4 blend_pos = tex2Dlod(_AnimationTex, blend_vertexUV1);
 
-                pos = lerp(pos, blend_pos, _BlendProgress);
+                positionOS = lerp(pos, blend_pos, _BlendProgress).xyz;
+            }
 
-                output.positionCS = TransformObjectToHClip(pos.xyz);
-                output.positionWS = TransformObjectToWorld(pos.xyz);
+            //Varyings Vertex(Attributes input, uint vid : SV_VertexID)
+            Varyings Vertex(Attributes input)
+			{
+				UNITY_SETUP_INSTANCE_ID(input);
+
+                Varyings output;
+
+                float3 positionOS;
+                GetVertexAnimPos(input, positionOS);
+
+                output.positionCS = TransformObjectToHClip(positionOS);
+                output.positionWS = TransformObjectToWorld(positionOS);
                 output.uv = input.texcoord;
                 output.normalWS = TransformObjectToWorldNormal(input.normal); // Use bind pose normal as fallback or base
 
                 return output;
 			}
+            
+            // Shadow Caster Logic
+            float3 _LightDirection;
+            float3 _LightPosition;
+            
+            struct VaryingsShadow
+            {
+                float4 positionCS : SV_POSITION;
+                UNITY_VERTEX_OUTPUT_STEREO
+            };
+            
+            float4 GetShadowPositionHClip(float3 positionWS, float3 normalWS)
+            {
+                float3 lightDirectionWS = _LightDirection;
+                #ifdef _CASTING_PUNCTUAL_LIGHT_SHADOW
+                    lightDirectionWS = normalize(_LightPosition - positionWS);
+                #endif
+
+                float4 positionCS = TransformWorldToHClip(ApplyShadowBias(positionWS, normalWS, lightDirectionWS));
+
+                #if UNITY_REVERSED_Z
+                    positionCS.z = min(positionCS.z, positionCS.w * UNITY_NEAR_CLIP_VALUE);
+                #else
+                    positionCS.z = max(positionCS.z, positionCS.w * UNITY_NEAR_CLIP_VALUE);
+                #endif
+
+                return positionCS;
+            }
+
+            VaryingsShadow VertexShadow(Attributes input)
+            {
+                UNITY_SETUP_INSTANCE_ID(input);
+                VaryingsShadow output;
+                
+                float3 positionOS;
+                GetVertexAnimPos(input, positionOS);
+
+                float3 positionWS = TransformObjectToWorld(positionOS);
+                float3 normalWS = TransformObjectToWorldNormal(input.normal);
+
+                output.positionCS = GetShadowPositionHClip(positionWS, normalWS);
+                return output;
+            }
+            
+            half4 FragmentShadow(VaryingsShadow input) : SV_TARGET
+            {
+                return 0;
+            }
 
 			half4 Fragment(Varyings input) : SV_Target
 			{
@@ -204,7 +258,7 @@ Shader "GPUSkin/GpuVerticesAnimation"
                 
                 #pragma vertex Vertex
                 #pragma fragment Fragment
-                
+
                 #pragma multi_compile _ _MAIN_LIGHT_SHADOWS
                 #pragma multi_compile _ _MAIN_LIGHT_SHADOWS_CASCADE
                 #pragma multi_compile _ _ADDITIONAL_LIGHTS_VERTEX _ADDITIONAL_LIGHTS
@@ -217,7 +271,36 @@ Shader "GPUSkin/GpuVerticesAnimation"
                 #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
 
 			ENDHLSL
-        }
+		}
 
-    }
-}
+        Pass
+        {
+            Name "ShadowCaster"
+            Tags { "LightMode" = "ShadowCaster" }
+
+            ZWrite On
+            ZTest LEqual
+            ColorMask 0
+
+            HLSLPROGRAM
+            #pragma exclude_renderers gles gles3 glcore
+            #pragma target 4.5
+
+            //--------------------------------------
+            // GPU Instancing
+            #pragma multi_compile_instancing
+            #pragma multi_compile _ DOTS_INSTANCING_ON
+
+            // This is used during shadow map generation to differentiate between directional and punctual light shadows, as they use different formulas to apply Depth Bias
+            #pragma multi_compile_vertex _ _CASTING_PUNCTUAL_LIGHT_SHADOW
+
+            #pragma vertex VertexShadow
+            #pragma fragment FragmentShadow
+
+            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
+            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Shadows.hlsl"
+            
+            // Re-using common logic defined in HLSLINCLUDE block
+
+            ENDHLSL
+        }
