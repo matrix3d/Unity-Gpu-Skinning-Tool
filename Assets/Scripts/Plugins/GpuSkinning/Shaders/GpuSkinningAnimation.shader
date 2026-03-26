@@ -6,6 +6,8 @@ Shader "GPUSkin/GpuSkinningAnimation"
 	{
 		_BaseMap ("Albedo (RGB)", 2D) = "white" {}
 		_Color ("Color", Color) = (1,1,1,1)
+        _Smoothness("Smoothness", Range(0.0, 1.0)) = 0.5
+        _Metallic("Metallic", Range(0.0, 1.0)) = 0.0
         _AnimationTex("Animation Texture", 2D) = "white" {}
 
 		_BoneNum("Bone Num", Int) = 0
@@ -18,6 +20,7 @@ Shader "GPUSkin/GpuSkinningAnimation"
 	{
 	    HLSLINCLUDE
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
+            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
             
             struct Attributes
 		    {
@@ -33,11 +36,15 @@ Shader "GPUSkin/GpuSkinningAnimation"
 		    {
 			    float4 positionCS : SV_POSITION;
                 float2 uv : TEXCOORD0;
+                float3 normalWS : TEXCOORD1;
+                float3 positionWS : TEXCOORD2;
                 UNITY_VERTEX_OUTPUT_STEREO
 		    };
 		    
             CBUFFER_START(UnityPerMaterial)
                 half4 _Color;
+                half _Smoothness;
+                half _Metallic;
                 // 动画纹理尺寸信息
                 float4 _AnimationTex_TexelSize;
                 // 骨骼数量
@@ -193,7 +200,16 @@ Shader "GPUSkin/GpuSkinningAnimation"
 					mul(bone1_matrix, input.positionOS) * boneWeights[1] +
 					mul(bone2_matrix, input.positionOS) * boneWeights[2] +
 					mul(bone3_matrix, input.positionOS) * boneWeights[3];
+				
+                float3 normalOS =
+                    mul((float3x3)bone0_matrix, input.normal) * boneWeights[0] +
+                    mul((float3x3)bone1_matrix, input.normal) * boneWeights[1] +
+                    mul((float3x3)bone2_matrix, input.normal) * boneWeights[2] +
+                    mul((float3x3)bone3_matrix, input.normal) * boneWeights[3];
+
 				output.positionCS = TransformObjectToHClip(pos.xyz);
+                output.normalWS = TransformObjectToWorldNormal(normalOS);
+                output.positionWS = TransformObjectToWorld(pos.xyz);
 				output.uv = input.texcoord;
 
 				return output;
@@ -201,8 +217,34 @@ Shader "GPUSkin/GpuSkinningAnimation"
 
 			half4 Fragment(Varyings input) : SV_Target
 			{
-				half4 col = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, input.uv);;
-				return col;
+                UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(input);
+
+				half4 albedo = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, input.uv) * _Color;
+                
+                InputData inputData = (InputData)0;
+                inputData.positionWS = input.positionWS;
+                inputData.normalWS = normalize(input.normalWS);
+                inputData.viewDirectionWS = GetWorldSpaceViewDir(input.positionWS);
+                inputData.shadowCoord = TransformWorldToShadowCoord(input.positionWS);
+                inputData.fogCoord = 0; 
+                inputData.vertexLighting = half3(0,0,0);
+                inputData.bakedGI = half3(0,0,0);
+                inputData.normalizedScreenSpaceUV = GetNormalizedScreenSpaceUV(input.positionCS);
+                inputData.shadowMask = half4(1,1,1,1);
+
+                SurfaceData surfaceData = (SurfaceData)0;
+                surfaceData.albedo = albedo.rgb;
+                surfaceData.specular = half3(0,0,0);
+                surfaceData.metallic = _Metallic;
+                surfaceData.smoothness = _Smoothness;
+                surfaceData.normalTS = half3(0,0,1);
+                surfaceData.emission = half3(0,0,0);
+                surfaceData.occlusion = 1;
+                surfaceData.alpha = albedo.a;
+                surfaceData.clearCoatMask = 0;
+                surfaceData.clearCoatSmoothness = 0;
+
+                return UniversalFragmentPBR(inputData, surfaceData);
 			}
             
 
@@ -217,6 +259,40 @@ Shader "GPUSkin/GpuSkinningAnimation"
 			HLSLPROGRAM
                 #pragma vertex Vertex
                 #pragma fragment Fragment
+                
+                #pragma multi_compile _ _MAIN_LIGHT_SHADOWS
+                #pragma multi_compile _ _MAIN_LIGHT_SHADOWS_CASCADE
+                #pragma multi_compile _ _ADDITIONAL_LIGHTS_VERTEX _ADDITIONAL_LIGHTS
+                #pragma multi_compile_fragment _ _ADDITIONAL_LIGHT_SHADOWS
+                #pragma multi_compile_fragment _ _SHADOWS_SOFT
+                #pragma multi_compile_fragment _ _SCREEN_SPACE_OCCLUSION
+                #pragma multi_compile_fog
+                
+                #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Input.hlsl"
+                #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
+                
+                // Helper to fill InputData
+                void InitializeInputData(Varyings input, out InputData inputData)
+                {
+                    inputData.positionWS = input.positionWS;
+                    inputData.normalWS = normalize(input.normalWS);
+                    inputData.viewDirectionWS = GetWorldSpaceViewDir(input.positionWS);
+                    
+                    #if defined(REQUIRES_VERTEX_SHADOW_COORD_INTERPOLATOR)
+                        inputData.shadowCoord = input.shadowCoord;
+                    #elif defined(MAIN_LIGHT_CALCULATE_SHADOWS)
+                        inputData.shadowCoord = TransformWorldToShadowCoord(inputData.positionWS);
+                    #else
+                        inputData.shadowCoord = float4(0, 0, 0, 0);
+                    #endif
+                    
+                    inputData.fogCoord = 0; // Not using fog coord for now to keep struct simple
+                    inputData.vertexLighting = half3(0, 0, 0);
+                    inputData.bakedGI = half3(0, 0, 0); // No GI support
+                    inputData.normalizedScreenSpaceUV = GetNormalizedScreenSpaceUV(input.positionCS);
+                    inputData.shadowMask = half4(1, 1, 1, 1);
+                }
+
 			ENDHLSL
 		}
 

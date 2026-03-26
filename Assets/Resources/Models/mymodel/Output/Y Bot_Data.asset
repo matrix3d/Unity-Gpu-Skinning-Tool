@@ -1,0 +1,33 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8c9d1c53a1b58d646b4099c38f425edd, type: 3}
+  m_Name: Y Bot_Data
+  m_EditorClassIdentifier: 
+  texWidth: 256
+  texHeight: 128
+  clips:
+  - name: mixamo.com
+    startFrame: 0
+    endFrame: 0
+    frameRate: 30
+  - name: idle
+    startFrame: 1
+    endFrame: 250
+    frameRate: 30
+  - name: slash
+    startFrame: 251
+    endFrame: 295
+    frameRate: 30
+  totalFrame: 296
+  totalBoneNum: 52
+  min: 0
+  max: 0

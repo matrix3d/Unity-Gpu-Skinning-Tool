@@ -9,6 +9,8 @@ Material:
   m_PrefabAsset: {fileID: 0}
   m_Name: Fighter_NoiseVertMat
   m_Shader: {fileID: 4800000, guid: 0530a2bed7d34f54297c4adf1d4d003d, type: 3}
+  m_Parent: {fileID: 0}
+  m_ModifiedSerializedProperties: 0
   m_ValidKeywords: []
   m_InvalidKeywords: []
   m_LightmapFlags: 4
@@ -17,6 +19,7 @@ Material:
   m_CustomRenderQueue: -1
   stringTagMap: {}
   disabledShaderPasses: []
+  m_LockedProperties: 
   m_SavedProperties:
     serializedVersion: 3
     m_TexEnvs:
@@ -40,8 +43,8 @@ Material:
     m_Floats:
     - _BlendFrameIndex: 0
     - _BlendProgress: 0
-    - _BoneNum: 0
-    - _FrameIndex: 0
+    - _BoneNum: 42
+    - _FrameIndex: 107
     - _PerPixelWorldSize: 0.25
     m_Colors:
     - _Color: {r: 1, g: 1, b: 1, a: 1}

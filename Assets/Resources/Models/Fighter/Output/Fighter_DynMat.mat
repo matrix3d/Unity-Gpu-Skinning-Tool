@@ -9,6 +9,8 @@ Material:
   m_PrefabAsset: {fileID: 0}
   m_Name: Fighter_DynMat
   m_Shader: {fileID: 4800000, guid: 09eedfe69538b4023a98e6c30176f4ff, type: 3}
+  m_Parent: {fileID: 0}
+  m_ModifiedSerializedProperties: 0
   m_ValidKeywords: []
   m_InvalidKeywords: []
   m_LightmapFlags: 4
@@ -17,6 +19,7 @@ Material:
   m_CustomRenderQueue: -1
   stringTagMap: {}
   disabledShaderPasses: []
+  m_LockedProperties: 
   m_SavedProperties:
     serializedVersion: 3
     m_TexEnvs:
@@ -37,7 +40,7 @@ Material:
     - _BlendFrameIndex: 0
     - _BlendProgress: 0
     - _BoneNum: 42
-    - _FrameIndex: 46
+    - _FrameIndex: 124
     m_Colors:
     - _AnimationTexSize: {r: 256, g: 128, b: 0, a: 0}
     - _Color: {r: 1, g: 1, b: 1, a: 1}

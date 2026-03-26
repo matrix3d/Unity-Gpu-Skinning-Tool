@@ -6,6 +6,8 @@ Shader "GPUSkin/GpuVerticesAnimation"
 	{
 		_BaseMap("Albedo (RGB)", 2D) = "white" {}
 		_Color("Color", Color) = (1,1,1,1)
+        _Smoothness("Smoothness", Range(0.0, 1.0)) = 0.5
+        _Metallic("Metallic", Range(0.0, 1.0)) = 0.0
 		_AnimationTex("Animation Texture", 2D) = "white" {}
 		_AnimationNormalTex("Animation Normal Texture", 2D) = "white" {}
 
@@ -19,6 +21,7 @@ Shader "GPUSkin/GpuVerticesAnimation"
     {
     HLSLINCLUDE
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
+            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
             
             struct Attributes
 		    {
@@ -33,11 +36,15 @@ Shader "GPUSkin/GpuVerticesAnimation"
 		    {
 			    float4 positionCS : SV_POSITION;
                 float2 uv : TEXCOORD0;
+                float3 normalWS : TEXCOORD1;
+                float3 positionWS : TEXCOORD2;
                 UNITY_VERTEX_OUTPUT_STEREO
 		    };
 		    
             CBUFFER_START(UnityPerMaterial)
                 half4 _Color;
+                half _Smoothness;
+                half _Metallic;
                 // 动画纹理尺寸信息
                 float4 _AnimationTex_TexelSize;
 				// 动画法线纹理尺寸信息
@@ -141,17 +148,45 @@ Shader "GPUSkin/GpuVerticesAnimation"
 
                 pos = lerp(pos, blend_pos, _BlendProgress);
 
-                // o.uv = TRANSFORM_TEX(v.uv, _MainTex);
                 output.positionCS = TransformObjectToHClip(pos.xyz);
+                output.positionWS = TransformObjectToWorld(pos.xyz);
                 output.uv = input.texcoord;
+                output.normalWS = TransformObjectToWorldNormal(input.normal); // Use bind pose normal as fallback or base
 
                 return output;
 			}
 
 			half4 Fragment(Varyings input) : SV_Target
 			{
-				half4 col = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, input.uv);;
-				return col;
+                UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(input);
+
+				half4 albedo = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, input.uv) * _Color;
+                
+                InputData inputData = (InputData)0;
+                inputData.positionWS = input.positionWS;
+                inputData.normalWS = normalize(input.normalWS);
+                inputData.viewDirectionWS = GetWorldSpaceViewDir(input.positionWS);
+                inputData.shadowCoord = TransformWorldToShadowCoord(input.positionWS);
+                
+                inputData.fogCoord = 0; 
+                inputData.vertexLighting = half3(0,0,0);
+                inputData.bakedGI = half3(0,0,0);
+                inputData.normalizedScreenSpaceUV = GetNormalizedScreenSpaceUV(input.positionCS);
+                inputData.shadowMask = half4(1,1,1,1);
+
+                SurfaceData surfaceData = (SurfaceData)0;
+                surfaceData.albedo = albedo.rgb;
+                surfaceData.specular = half3(0,0,0);
+                surfaceData.metallic = _Metallic;
+                surfaceData.smoothness = _Smoothness;
+                surfaceData.normalTS = half3(0,0,1);
+                surfaceData.emission = half3(0,0,0);
+                surfaceData.occlusion = 1;
+                surfaceData.alpha = albedo.a;
+                surfaceData.clearCoatMask = 0;
+                surfaceData.clearCoatSmoothness = 0;
+
+                return UniversalFragmentPBR(inputData, surfaceData);
 			}
             
 
@@ -169,6 +204,18 @@ Shader "GPUSkin/GpuVerticesAnimation"
                 
                 #pragma vertex Vertex
                 #pragma fragment Fragment
+                
+                #pragma multi_compile _ _MAIN_LIGHT_SHADOWS
+                #pragma multi_compile _ _MAIN_LIGHT_SHADOWS_CASCADE
+                #pragma multi_compile _ _ADDITIONAL_LIGHTS_VERTEX _ADDITIONAL_LIGHTS
+                #pragma multi_compile_fragment _ _ADDITIONAL_LIGHT_SHADOWS
+                #pragma multi_compile_fragment _ _SHADOWS_SOFT
+                #pragma multi_compile_fragment _ _SCREEN_SPACE_OCCLUSION
+                #pragma multi_compile_fog
+                
+                #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Input.hlsl"
+                #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
+
 			ENDHLSL
         }
 
