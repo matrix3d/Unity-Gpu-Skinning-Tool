@@ -283,7 +283,7 @@ Shader "GPUSkin/GpuSkinningAnim_Inst"
                 
                 inputData.fogCoord = 0; 
                 inputData.vertexLighting = half3(0,0,0);
-                inputData.bakedGI = half3(0,0,0);
+                inputData.bakedGI = SampleSH(inputData.normalWS);
                 inputData.normalizedScreenSpaceUV = GetNormalizedScreenSpaceUV(input.positionCS);
                 inputData.shadowMask = half4(1,1,1,1);
 
@@ -324,6 +324,8 @@ Shader "GPUSkin/GpuSkinningAnim_Inst"
                 #pragma multi_compile_fragment _ _ADDITIONAL_LIGHT_SHADOWS
                 #pragma multi_compile_fragment _ _SHADOWS_SOFT
                 #pragma multi_compile_fragment _ _SCREEN_SPACE_OCCLUSION
+                #pragma multi_compile _ LIGHTMAP_ON
+                #pragma multi_compile _ DIRLIGHTMAP_COMBINED
                 #pragma multi_compile_fog
                 
                 #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Input.hlsl"
